@@ -58,8 +58,8 @@ export type {{.Name}} = {
     return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, {{buildInitReq .}}})
   }
 {{- else }}
-  static {{.Name}}(req: {{tsType .Input}}, initReq?: fm.InitReq): Promise<{{tsType .Output}}> {
-    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, {{buildInitReq .}}})
+  static {{.Name}}(req: {{tsType .Input}}, initReq?: fm.InitReq, optFetch?): Promise<{{tsType .Output}}> {
+    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, {{buildInitReq .}}}, optFetch)
   }
 {{- end}}
 {{- end}}
@@ -211,12 +211,14 @@ export function replacer(key: any, value: any): any {
   return value;
 }
 
-export function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
+export function fetchReq<I, O>(path: string, init?: InitReq, optFetch?): Promise<O> {
   const {pathPrefix, ...req} = init || {}
 
   const url = pathPrefix ? ` + "`${pathPrefix}${path}`" + ` : path
 
-  return fetch(url, req).then(r => r.json().then((body: O) => {
+  const f = optFetch ?? fetch
+
+  return f(url, req).then(r => r.json().then((body: O) => {
     if (!r.ok) { throw body; }
     return body;
   })) as Promise<O>
