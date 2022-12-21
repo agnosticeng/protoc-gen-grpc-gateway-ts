@@ -51,23 +51,17 @@ export type {{.Name}} = {
 {{end}}
 {{end}}{{end}}
 
-type InitReq = Omit<fm.InitReq, 'pathPrefix'>
-
 {{define "services"}}{{range .}}export class {{.Name}} {
-  #pathPrefix: string
-
-  constructor(pathPrefix: string) {
-    this.#pathPrefix = pathPrefix
-  }
+  constructor(private pathPrefix: string) {}
 
 {{- range .Methods}}  
 {{- if .ServerStreaming }}
-  {{.Name}}(req: {{tsType .Input}}, entityNotifier?: fm.NotifyStreamEntityArrival<{{tsType .Output}}>, initReq?: InitReq): Promise<void> {
-    return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, pathPrefix: this.#pathPrefix, {{buildInitReq .}}})
+  {{.Name}}(req: {{tsType .Input}}, entityNotifier?: fm.NotifyStreamEntityArrival<{{tsType .Output}}>, initReq?: Omit<fm.InitReq, 'pathPrefix'>): Promise<void> {
+    return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, pathPrefix: this.pathPrefix, {{buildInitReq .}}})
   }
 {{- else }}
-  {{.Name}}(req: {{tsType .Input}}, initReq?: InitReq): Promise<{{tsType .Output}}> {
-    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, pathPrefix: this.#pathPrefix, {{buildInitReq .}}})
+  {{.Name}}(req: {{tsType .Input}}, initReq?: Omit<fm.InitReq, 'pathPrefix'>): Promise<{{tsType .Output}}> {
+    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, pathPrefix: this.pathPrefix, {{buildInitReq .}}})
   }
 {{- end}}
 {{- end}}
@@ -203,13 +197,10 @@ export function b64Decode(s: string): Uint8Array {
   return new Uint8Array(buffer);
 }
 
-function b64Test(s: string): boolean {
-	return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(s);
-}
-
 export interface InitReq extends RequestInit {
   pathPrefix?: string
   customFetch?: typeof globalThis.fetch
+  token?: string
 }
 
 export function replacer(key: any, value: any): any {
@@ -221,7 +212,12 @@ export function replacer(key: any, value: any): any {
 }
 
 export function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
-  const {pathPrefix, customFetch = fetch, ...req} = init || {}
+  const {pathPrefix, customFetch = fetch, token, ...req} = init || {}
+
+  if (token) {
+    req.headers = new Headers(req.headers ?? {})
+    req.headers.append('Authorization', ` + "`Bearer ${token}`" + `)
+  }
 
   const url = pathPrefix ? ` + "`${pathPrefix}${path}`" + ` : path
 
@@ -240,7 +236,13 @@ export type NotifyStreamEntityArrival<T> = (resp: T) => void
  * all entities will be returned as an array after the call finishes.
  **/
 export async function fetchStreamingRequest<S, R>(path: string, callback?: NotifyStreamEntityArrival<R>, init?: InitReq) {
-  const {pathPrefix, customFetch = fetch, ...req} = init || {}
+  const {pathPrefix, customFetch = fetch, token, ...req} = init || {}
+
+  if (token) {
+    req.headers = new Headers(req.headers ?? {})
+    req.headers.append('Authorization', ` + "`Bearer ${token}`" + `)
+  }
+
   const url = pathPrefix ?` + "`${pathPrefix}${path}`" + ` : path
   const result = await customFetch(url, req)
   // needs to use the .ok to check the status of HTTP status code
