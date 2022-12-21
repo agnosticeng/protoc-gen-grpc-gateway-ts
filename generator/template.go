@@ -51,15 +51,23 @@ export type {{.Name}} = {
 {{end}}
 {{end}}{{end}}
 
+type InitReq = Omit<fm.InitReq, 'pathPrefix'>
+
 {{define "services"}}{{range .}}export class {{.Name}} {
+  #pathPrefix: string
+
+  constructor(pathPrefix: string) {
+    this.#pathPrefix = pathPrefix
+  }
+
 {{- range .Methods}}  
 {{- if .ServerStreaming }}
-  static {{.Name}}(req: {{tsType .Input}}, entityNotifier?: fm.NotifyStreamEntityArrival<{{tsType .Output}}>, initReq?: fm.InitReq): Promise<void> {
-    return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, {{buildInitReq .}}})
+  {{.Name}}(req: {{tsType .Input}}, entityNotifier?: fm.NotifyStreamEntityArrival<{{tsType .Output}}>, initReq?: InitReq): Promise<void> {
+    return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, pathPrefix: this.#pathPrefix, {{buildInitReq .}}})
   }
 {{- else }}
-  static {{.Name}}(req: {{tsType .Input}}, initReq?: fm.InitReq, optFetch?): Promise<{{tsType .Output}}> {
-    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, {{buildInitReq .}}}, optFetch)
+  {{.Name}}(req: {{tsType .Input}}, initReq?: InitReq): Promise<{{tsType .Output}}> {
+    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, pathPrefix: this.#pathPrefix, {{buildInitReq .}}})
   }
 {{- end}}
 {{- end}}
@@ -201,6 +209,7 @@ function b64Test(s: string): boolean {
 
 export interface InitReq extends RequestInit {
   pathPrefix?: string
+  customFetch?: typeof globalThis.fetch
 }
 
 export function replacer(key: any, value: any): any {
@@ -211,14 +220,12 @@ export function replacer(key: any, value: any): any {
   return value;
 }
 
-export function fetchReq<I, O>(path: string, init?: InitReq, optFetch?): Promise<O> {
-  const {pathPrefix, ...req} = init || {}
+export function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
+  const {pathPrefix, customFetch = fetch, ...req} = init || {}
 
   const url = pathPrefix ? ` + "`${pathPrefix}${path}`" + ` : path
 
-  const f = optFetch ?? fetch
-
-  return f(url, req).then(r => r.json().then((body: O) => {
+  return customFetch(url, req).then(r => r.json().then((body: O) => {
     if (!r.ok) { throw body; }
     return body;
   })) as Promise<O>
@@ -233,9 +240,9 @@ export type NotifyStreamEntityArrival<T> = (resp: T) => void
  * all entities will be returned as an array after the call finishes.
  **/
 export async function fetchStreamingRequest<S, R>(path: string, callback?: NotifyStreamEntityArrival<R>, init?: InitReq) {
-  const {pathPrefix, ...req} = init || {}
+  const {pathPrefix, customFetch = fetch, ...req} = init || {}
   const url = pathPrefix ?` + "`${pathPrefix}${path}`" + ` : path
-  const result = await fetch(url, req)
+  const result = await customFetch(url, req)
   // needs to use the .ok to check the status of HTTP status code
   // http other than 200 will not throw an error, instead the .ok will become false.
   // see https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#
