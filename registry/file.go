@@ -93,7 +93,7 @@ func (r *Registry) analyseFilePackageTypeDependencies(fileData *data.File) {
 		// also need to change the type's IsExternal information for rendering purpose
 		typeInfo := t.GetType()
 		fqTypeName := typeInfo.Type
-		log.Debugf("checking whether non scala type %s in the same message is external to the current file", fqTypeName)
+		log.Debugf("checking whether non scalar type %s in the same message is external to the current file", fqTypeName)
 
 		registryType, foundInRegistry := r.Types[fqTypeName]
 		if !foundInRegistry || registryType.File != fileData.Name {
