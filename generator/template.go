@@ -42,6 +42,9 @@ type Base{{.Name}} = {
 export type {{.Name}} = Base{{.Name}}
 {{range $groupId, $fields := .OneOfFieldsGroups}}  & OneOf<{ {{range $index, $field := $fields}}{{fieldName $field.Name}}: {{tsType $field}}{{if (lt (add $index 1) (len $fields))}}; {{end}}{{end}} }>
 {{end}}
+{{end}}
+{{- if .IsWellKnown -}}
+export type {{.Name}} = {{typeAlias .}}
 {{- else -}}
 export type {{.Name}} = {
 {{- range .Fields}}
@@ -456,6 +459,7 @@ func GetTemplate(r *registry.Registry) *template.Template {
 		"tsType": func(fieldType data.Type) string {
 			return tsType(r, fieldType)
 		},
+		"typeAlias":    typeAlias,
 		"renderURL":    renderURL(r),
 		"buildInitReq": buildInitReq,
 		"fieldName":    fieldName(r),
@@ -463,6 +467,15 @@ func GetTemplate(r *registry.Registry) *template.Template {
 
 	t = template.Must(t.Parse(tmpl))
 	return t
+}
+
+func typeAlias(m data.Message) string {
+	if strings.Contains(m.FQType, "google.protobuf.Timestamp") || strings.Contains(m.FQType, "google.protobuf.Duration") ||
+		strings.Contains(m.FQType, "google.protobuf.FieldMask") {
+		return "string"
+	}
+
+	return "any"
 }
 
 func fieldName(r *registry.Registry) func(name string) string {
