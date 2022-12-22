@@ -1,5 +1,7 @@
 package data
 
+import "strings"
+
 // Message stores the rendering information about message
 type Message struct {
 	// Nested shows whether this message is a nested message and needs to be exported
@@ -25,6 +27,11 @@ type Message struct {
 // HasOneOfFields returns true when the message has a one of field.
 func (m *Message) HasOneOfFields() bool {
 	return len(m.OneOfFieldsGroups) > 0
+}
+
+func (m *Message) IsWellKnown() bool {
+	return strings.Contains(m.FQType, "google.protobuf.Timestamp") || strings.Contains(m.FQType, "google.protobuf.Duration") ||
+		strings.Contains(m.FQType, "google.protobuf.FieldMask") || strings.Contains(m.FQType, "google.protobuf.Any")
 }
 
 // NewMessage initialises and return a Message

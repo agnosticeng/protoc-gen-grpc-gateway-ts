@@ -42,6 +42,9 @@ type Base{{.Name}} = {
 export type {{.Name}} = Base{{.Name}}
 {{range $groupId, $fields := .OneOfFieldsGroups}}  & OneOf<{ {{range $index, $field := $fields}}{{fieldName $field.Name}}: {{tsType $field}}{{if (lt (add $index 1) (len $fields))}}; {{end}}{{end}} }>
 {{end}}
+{{end}}
+{{- if .IsWellKnown -}}
+export type {{.Name}} = {{typeAlias .}}
 {{- else -}}
 export type {{.Name}} = {
 {{- range .Fields}}
@@ -52,14 +55,16 @@ export type {{.Name}} = {
 {{end}}{{end}}
 
 {{define "services"}}{{range .}}export class {{.Name}} {
+  constructor(private pathPrefix: string) {}
+
 {{- range .Methods}}  
 {{- if .ServerStreaming }}
-  static {{.Name}}(req: {{tsType .Input}}, entityNotifier?: fm.NotifyStreamEntityArrival<{{tsType .Output}}>, initReq?: fm.InitReq): Promise<void> {
-    return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, {{buildInitReq .}}})
+  {{.Name}}(req: {{tsType .Input}}, entityNotifier?: fm.NotifyStreamEntityArrival<{{tsType .Output}}>, initReq?: Omit<fm.InitReq, 'pathPrefix'>): Promise<void> {
+    return fm.fetchStreamingRequest<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, entityNotifier, {...initReq, pathPrefix: this.pathPrefix, {{buildInitReq .}}})
   }
 {{- else }}
-  static {{.Name}}(req: {{tsType .Input}}, initReq?: fm.InitReq, optFetch?): Promise<{{tsType .Output}}> {
-    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, {{buildInitReq .}}}, optFetch)
+  {{.Name}}(req: {{tsType .Input}}, initReq?: Omit<fm.InitReq, 'pathPrefix'>): Promise<{{tsType .Output}}> {
+    return fm.fetchReq<{{tsType .Input}}, {{tsType .Output}}>(` + "`{{renderURL .}}`" + `, {...initReq, pathPrefix: this.pathPrefix, {{buildInitReq .}}})
   }
 {{- end}}
 {{- end}}
@@ -195,12 +200,10 @@ export function b64Decode(s: string): Uint8Array {
   return new Uint8Array(buffer);
 }
 
-function b64Test(s: string): boolean {
-	return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(s);
-}
-
 export interface InitReq extends RequestInit {
   pathPrefix?: string
+  customFetch?: typeof globalThis.fetch
+  token?: string
 }
 
 export function replacer(key: any, value: any): any {
@@ -211,14 +214,17 @@ export function replacer(key: any, value: any): any {
   return value;
 }
 
-export function fetchReq<I, O>(path: string, init?: InitReq, optFetch?): Promise<O> {
-  const {pathPrefix, ...req} = init || {}
+export function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
+  const {pathPrefix, customFetch = fetch, token, ...req} = init || {}
+
+  if (token) {
+    req.headers = new Headers(req.headers ?? {})
+    req.headers.append('Authorization', ` + "`Bearer ${token}`" + `)
+  }
 
   const url = pathPrefix ? ` + "`${pathPrefix}${path}`" + ` : path
 
-  const f = optFetch ?? fetch
-
-  return f(url, req).then(r => r.json().then((body: O) => {
+  return customFetch(url, req).then(r => r.json().then((body: O) => {
     if (!r.ok) { throw body; }
     return body;
   })) as Promise<O>
@@ -233,9 +239,15 @@ export type NotifyStreamEntityArrival<T> = (resp: T) => void
  * all entities will be returned as an array after the call finishes.
  **/
 export async function fetchStreamingRequest<S, R>(path: string, callback?: NotifyStreamEntityArrival<R>, init?: InitReq) {
-  const {pathPrefix, ...req} = init || {}
+  const {pathPrefix, customFetch = fetch, token, ...req} = init || {}
+
+  if (token) {
+    req.headers = new Headers(req.headers ?? {})
+    req.headers.append('Authorization', ` + "`Bearer ${token}`" + `)
+  }
+
   const url = pathPrefix ?` + "`${pathPrefix}${path}`" + ` : path
-  const result = await fetch(url, req)
+  const result = await customFetch(url, req)
   // needs to use the .ok to check the status of HTTP status code
   // http other than 200 will not throw an error, instead the .ok will become false.
   // see https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#
@@ -447,6 +459,7 @@ func GetTemplate(r *registry.Registry) *template.Template {
 		"tsType": func(fieldType data.Type) string {
 			return tsType(r, fieldType)
 		},
+		"typeAlias":    typeAlias,
 		"renderURL":    renderURL(r),
 		"buildInitReq": buildInitReq,
 		"fieldName":    fieldName(r),
@@ -454,6 +467,15 @@ func GetTemplate(r *registry.Registry) *template.Template {
 
 	t = template.Must(t.Parse(tmpl))
 	return t
+}
+
+func typeAlias(m data.Message) string {
+	if strings.Contains(m.FQType, "google.protobuf.Timestamp") || strings.Contains(m.FQType, "google.protobuf.Duration") ||
+		strings.Contains(m.FQType, "google.protobuf.FieldMask") {
+		return "string"
+	}
+
+	return "any"
 }
 
 func fieldName(r *registry.Registry) func(name string) string {
