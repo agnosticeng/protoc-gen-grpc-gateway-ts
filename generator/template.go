@@ -214,7 +214,7 @@ export function replacer(key: any, value: any): any {
   return value;
 }
 
-export function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
+export async function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
   const {pathPrefix, customFetch = fetch, token, ...req} = init || {}
 
   if (token) {
@@ -224,10 +224,21 @@ export function fetchReq<I, O>(path: string, init?: InitReq): Promise<O> {
 
   const url = pathPrefix ? ` + "`${pathPrefix}${path}`" + ` : path
 
-  return customFetch(url, req).then(r => r.json().then((body: O) => {
-    if (!r.ok) { throw body; }
-    return body;
-  })) as Promise<O>
+  const response = await customFetch(url, req)
+
+  if (response.ok) {
+    return response.json() as Promise<O>
+  }
+
+  const contentType = response.headers.get("content-type")
+  let body: unknown
+  if (contentType && contentType.indexOf('application/json') !== -1) {
+    body = await response.json()
+  } else {
+    body = await response.text()
+  }
+
+  throw body
 }
 
 // NotifyStreamEntityArrival is a callback that will be called on streaming entity arrival
